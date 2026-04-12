@@ -3,7 +3,7 @@ from adafruit_lsm6ds.ism330dhcx import ISM330DHCX
 import time
 import numpy as np
 
-i2c = board.I2C(board.D5, board.D6) # replace this after following the README instructions
+i2c = board.I2C()
 sensor = ISM330DHCX(i2c) # you can add a second parameter for the address if needed
 
 sensor.gyro_range = 4000 # set the gyro range to 4000 dps
