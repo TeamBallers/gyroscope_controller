@@ -47,18 +47,17 @@ def skew(w):
 
 # --- Step 1: Wait for the ball to be still, then measure gravity on the tilted surface ---
 print("Hold the ball still on the surface...")
-while True:
+stable_count = 0
+samples = []
+while stable_count < 20:
     ax, ay, az = sensor.acceleration
     mag = np.linalg.norm([ax, ay, az])
-    if abs(mag - 9.81) < 0.5:
-        break
-    time.sleep(0.01)
-
-# Average several readings for a stable gravity estimate
-samples = []
-for _ in range(20):
-    ax, ay, az = sensor.acceleration
-    samples.append([ax, ay, az])
+    if abs(mag - 9.81) > 0.5:
+        stable_count = 0
+        samples.clear()
+    else:
+        stable_count += 1
+        samples.append([ax, ay, az])
     time.sleep(0.01)
 
 g_tilted = np.mean(samples, axis=0)
