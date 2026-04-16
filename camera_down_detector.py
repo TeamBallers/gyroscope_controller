@@ -61,9 +61,9 @@ from typing import Tuple, List
 # Default: 3 cameras evenly spaced (120° apart) in the IMU XY-plane.
 # Replace with your measured vectors; they do NOT need to lie on a major plane.
 CAMERA_DIRECTIONS_BODY: List[Tuple[float, float, float]] = [
-    (1.0,  0.0,                0.0),   # Camera 0 — along +X
-    (-0.5,  0.8660254037844387, 0.0),  # Camera 1 — 120° from camera 0
-    (-0.5, -0.8660254037844387, 0.0),  # Camera 2 — 240° from camera 0
+    (-0.045838, 0.987441, 0.151194),  # Camera 0
+    (0.074795, -0.173691, -0.981956),  # Camera 1
+    (0.051820, -0.686424, 0.725353),  # Camera 2
 ]
 
 # Angular tolerance: a camera is "facing down" if it is within this many
