@@ -23,4 +23,5 @@ if __name__ == "__main__":
         result = detector.update(sensor.acceleration, sensor.gyro, dt=0.01)
         for i in range(3):
             print(f"Camera {i} facing down: {result[i]}", end=" ")
+        print()
         # result[i] is True if camera i faces downward
