@@ -277,9 +277,9 @@ class CameraDownDetector:
 
         # --- 2. Accelerometer correction ----------------------------------
         accel_mag = np.linalg.norm(accel_np)
-        # if abs(accel_mag - G) < self._trust_tol:
-            # R_accel = _rotation_from_gravity(accel_np)
-            # self._R = _slerp_rotation(self._R, R_accel, self._gain)
+        if abs(accel_mag - G) < self._trust_tol:
+            R_accel = _rotation_from_gravity(accel_np)
+            self._R = _slerp_rotation(self._R, R_accel, self._gain)
 
         # --- 3. Re-orthogonalise R (prevents numerical drift) -------------
         self._R = self._reorthogonalize(self._R)
