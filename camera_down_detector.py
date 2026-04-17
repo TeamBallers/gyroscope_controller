@@ -273,7 +273,7 @@ class CameraDownDetector:
         if angle > 1e-9:
             R_gyro = _rodrigues(gyro_np, angle)
             # Gyro is measured in body frame; rotate R from the right
-            self._R = self._R @ R_gyro  # R_new = R_old · R_delta^T maps body→world
+            self._R = self._R @ R_gyro.T  # R_new = R_old · R_delta^T maps body→world
 
         # # --- 2. Accelerometer correction ----------------------------------
         # accel_mag = np.linalg.norm(accel_np)
