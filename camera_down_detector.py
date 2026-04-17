@@ -290,7 +290,7 @@ class CameraDownDetector:
             gravity_body_estimated = self._R.T @ np.array([0.0, 0.0, -1.0])
 
             # What does the accelerometer say gravity is in body frame?
-            gravity_body_measured = _normalize(-accel_np,)
+            gravity_body_measured = _normalize(-accel_np, context="accelerometer correction")
 
             # Corrective rotation axis: perpendicular to both, in body frame
             axis = np.cross(gravity_body_estimated, gravity_body_measured)
@@ -304,9 +304,6 @@ class CameraDownDetector:
                 R_correction = _rodrigues(axis, angle_err * self._gain)
                 # Apply in body frame (right-multiply) so yaw is untouched
                 self._R = self._R @ R_correction
-                print(f"estimated: {gravity_body_estimated}")
-                print(f"measured:  {gravity_body_measured}")
-                print(f"angle_err: {np.degrees(angle_err):.2f} deg")
 
         # --- 3. Re-orthogonalise R (prevents numerical drift) -------------
         self._R = self._reorthogonalize(self._R)
