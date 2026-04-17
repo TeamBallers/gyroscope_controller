@@ -275,35 +275,11 @@ class CameraDownDetector:
             # Gyro is measured in body frame; rotate R from the right
             self._R = self._R @ R_gyro.T  # R_new = R_old · R_delta^T maps body→world
 
-        # # --- 2. Accelerometer correction ----------------------------------
-        # accel_mag = np.linalg.norm(accel_np)
-        # if abs(accel_mag - G) < self._trust_tol:
-        #     R_accel = _rotation_from_gravity(accel_np)
-        #     self._R = _slerp_rotation(self._R, R_accel, self._gain)
-
-        # --- 2. Accelerometer correction (tilt only, yaw preserved) ---
+        # --- 2. Accelerometer correction ----------------------------------
         accel_mag = np.linalg.norm(accel_np)
         if abs(accel_mag - G) < self._trust_tol:
-            # What direction does our current R think gravity is in body frame?
-            # R maps body→world, so R.T maps world→body.
-            # World gravity direction is (0, 0, -1), so:
-            gravity_body_estimated = self._R.T @ np.array([0.0, 0.0, -1.0])
-
-            # What does the accelerometer say gravity is in body frame?
-            gravity_body_measured = _normalize(-accel_np, context="accelerometer correction")
-
-            # Corrective rotation axis: perpendicular to both, in body frame
-            axis = np.cross(gravity_body_estimated, gravity_body_measured)
-            sin_angle = np.linalg.norm(axis)
-            cos_angle = np.dot(gravity_body_estimated, gravity_body_measured)
-
-            if sin_angle > 1e-9:
-                axis = axis / sin_angle
-                angle_err = np.arctan2(sin_angle, cos_angle)
-                # Apply only a fraction of the correction (the gain)
-                R_correction = _rodrigues(axis, angle_err * self._gain)
-                # Apply in body frame (right-multiply) so yaw is untouched
-                self._R = self._R @ R_correction
+            R_accel = _rotation_from_gravity(accel_np)
+            self._R = _slerp_rotation(self._R, R_accel, self._gain)
 
         # --- 3. Re-orthogonalise R (prevents numerical drift) -------------
         self._R = self._reorthogonalize(self._R)
