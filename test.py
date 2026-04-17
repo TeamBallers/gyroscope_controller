@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     
     detector.initialize_from_stationary(sensor.acceleration)  # call once while still
-    gyro_bias = detector.calibrate_gyro_bias(sensor.gyro)  # call once while still, after initialization
+    gyro_bias = detector.calibrate_gyro_bias(sensor)  # call once while still, after initialization
 
     picture_rate = 1.0  # pictures per second
     last_picture_time = time.monotonic()
@@ -52,12 +52,15 @@ if __name__ == "__main__":
         # Give camera time to warm up
         time.sleep(2)
 
-
+    prevInterval = time.monotonic()
     while True:
         corrected_gyro = tuple(np.array(sensor.gyro) - gyro_bias)
-        result = detector.update(sensor.acceleration, sensor.gyro, dt=0.01)
-        if args.pictures and (time.monotonic() - last_picture_time) >= 1.0 / picture_rate:
-            last_picture_time = time.monotonic()
+        curInterval = time.monotonic()
+        dt = curInterval - prevInterval
+        prevInterval = curInterval
+        result = detector.update(sensor.acceleration, corrected_gyro, dt)
+        if args.pictures and (curInterval - last_picture_time) >= 1.0 / picture_rate:
+            last_picture_time = curInterval
             timestamp = int(time.time())
             filename = ""
             if result[0]:

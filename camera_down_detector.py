@@ -270,7 +270,7 @@ class CameraDownDetector:
 
         # --- 1. Gyroscope integration (Rodrigues step) --------------------
         angle = np.linalg.norm(gyro_np) * dt
-        if angle > 1e-9:
+        if angle > 0.075 * dt:
             R_gyro = _rodrigues(gyro_np, angle)
             # Gyro is measured in body frame; rotate R from the right
             self._R = self._R @ R_gyro.T  # R_new = R_old · R_delta^T maps body→world
@@ -295,7 +295,7 @@ class CameraDownDetector:
 
         return self.cameras_facing_down
     
-    def calibrate_gyro_bias(imu, num_samples=500):
+    def calibrate_gyro_bias(self, imu, num_samples=500):
         """
         Call this while the ball is completely stationary at startup.
         Returns the bias vector to subtract from all future gyro readings.
