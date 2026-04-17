@@ -294,6 +294,18 @@ class CameraDownDetector:
             self.cameras_facing_down[i] = dot >= self._threshold_cos
 
         return self.cameras_facing_down
+    
+    def calibrate_gyro_bias(imu, num_samples=500):
+        """
+        Call this while the ball is completely stationary at startup.
+        Returns the bias vector to subtract from all future gyro readings.
+        """
+        samples = []
+        for _ in range(num_samples):
+            samples.append(imu.gyro)
+        bias = np.mean(samples, axis=0)
+        print(f"Gyro bias: {bias}")
+        return bias
 
     # ------------------------------------------------------------------
     # Private helpers
