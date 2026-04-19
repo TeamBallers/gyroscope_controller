@@ -1,6 +1,7 @@
 from camera_down_detector import CameraDownDetector
 import board
 from adafruit_lsm6ds.ism330dhcx import ISM330DHCX
+from adafruit_lsm6ds import AccelRange, GyroRange, Rate
 import argparse
 import time
 import numpy as np
@@ -16,8 +17,8 @@ except ImportError:
 i2c = board.I2C()
 sensor = ISM330DHCX(i2c) # you can add a second parameter for the address if needed
 
-sensor.gyro_range = 4000 # set the gyro range to 4000 dps
-sensor.accelerometer_range = 2 # set the accel range to 2 g
+sensor.gyro_range = GyroRange.RANGE_2000_DPS # set the gyro range to 4000 dps
+sensor.accelerometer_range = AccelRange.RANGE_2G # set the accel range to 2 g
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Script description")
@@ -47,25 +48,34 @@ if __name__ == "__main__":
                 buffer_count=2
             )
         camera.configure(config)
+        camera.controls.ExposureTime = 40000
         camera.start()
 
         # Give camera time to warm up
         time.sleep(2)
 
     prevInterval = time.monotonic()
+    maxdps = 0
     while True:
         corrected_gyro = tuple(np.array(sensor.gyro) - gyro_bias)
         curInterval = time.monotonic()
+        if np.linalg.norm(corrected_gyro) > maxdps:
+            maxdps = np.linalg.norm(corrected_gyro)
+            maxreading = corrected_gyro
+        if int(curInterval) - int(prevInterval) > 0:
+            print("MAX DPS FOR INTERVAL", maxdps)
+            print("max reading", maxreading)
+            maxdps = 0
         dt = curInterval - prevInterval
         prevInterval = curInterval
         result = detector.update(sensor.acceleration, corrected_gyro, dt)
         if args.pictures and (curInterval - last_picture_time) >= 1.0 / picture_rate:
             last_picture_time = curInterval
             timestamp = int(time.time())
-            filename = ""
+            filename = f"{timestamp}"
             if result[0]:
-                filename = "down"
-            filename += f"{timestamp}.jpg"
+                filename += "_down"
+            filename += ".jpg"
             camera.capture_file(filename)
             print(f"Saved picture: {filename}", end=" ")
         for i in range(3):
