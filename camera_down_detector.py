@@ -25,8 +25,12 @@ close enough to world-down = (0, 0, -1).
 Usage
 -----
 1. Instantiate CameraDownDetector once (before the polling loop).
-2. Call detector.update(accel, gyro, dt) each polling iteration.
-3. Read detector.cameras_facing_down for the result.
+2. Instantiate DownwardFrameFilter once, wrapping the detector.
+3. Call filter.update(accel, gyro, dt) each polling iteration.
+4. Read filter.cameras_facing_down for the temporally-stable result.
+
+   Alternatively, use CameraDownDetector directly (without the filter) and
+   read detector.cameras_facing_down for raw per-frame results.
 
 Configuration
 -------------
@@ -47,6 +51,11 @@ ACCEL_TRUST_TOLERANCE : float  (m/s²)
     Accelerometer correction is only applied when
     | ||accel|| - g | < ACCEL_TRUST_TOLERANCE.
     Keeps correction disabled during strong linear / centripetal acceleration.
+
+SUSTAINED_FRAMES_REQUIRED : int
+    Number of consecutive frames a camera must be facing down before
+    DownwardFrameFilter reports it as truly facing down.  Raising this value
+    reduces false positives at the cost of increased detection latency.
 """
 
 import numpy as np
@@ -76,6 +85,10 @@ ACCEL_TRUST_TOLERANCE: float = 1.0    # m/s² — how close to 9.81 to trust acc
 
 # Standard gravity
 G: float = 9.80665  # m/s²
+
+# Number of consecutive frames a camera must face down before
+# DownwardFrameFilter reports it as truly facing down.
+SUSTAINED_FRAMES_REQUIRED: int = 5
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +175,7 @@ def _slerp_rotation(R_current: np.ndarray,
 
 
 # ---------------------------------------------------------------------------
-# Main class
+# Main detector class
 # ---------------------------------------------------------------------------
 
 class CameraDownDetector:
@@ -294,7 +307,7 @@ class CameraDownDetector:
             self.cameras_facing_down[i] = dot >= self._threshold_cos
 
         return self.cameras_facing_down
-    
+
     def calibrate_gyro_bias(self, imu, num_samples=500):
         """
         Call this while the ball is completely stationary at startup.
@@ -322,56 +335,155 @@ class CameraDownDetector:
 
 
 # ---------------------------------------------------------------------------
-# Example usage / smoke test
+# Temporal stability filter
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
-    import time
+class DownwardFrameFilter:
+    """
+    Wraps a CameraDownDetector and suppresses transient detections by
+    requiring a camera to be continuously facing down for at least
+    ``n_frames`` consecutive frames before it is reported as truly
+    facing down.
 
-    print("=== CameraDownDetector smoke test ===\n")
+    A camera's output latches to True only after ``n_frames`` consecutive
+    positive detections.  It returns to False immediately on the first
+    frame where the underlying detector no longer reports that camera as
+    facing down — i.e. the filter is strict on entry and instant on exit.
+    Adjust this behaviour via the ``latch_off_frames`` parameter if you
+    also need hysteresis on the falling edge.
 
-    detector = CameraDownDetector(
-        facing_down_threshold_deg=20.0,
-        accel_correction_gain=0.02,
-        accel_trust_tolerance=1.0,
-    )
+    Parameters
+    ----------
+    detector : CameraDownDetector
+        An already-constructed detector instance.
+    n_frames : int, optional
+        Number of consecutive frames required to confirm "facing down".
+        Must be >= 1.  Defaults to SUSTAINED_FRAMES_REQUIRED.
+    latch_off_frames : int, optional
+        Number of consecutive frames the camera must NOT be facing down
+        before the output is cleared.  Defaults to 1 (instant off).
+        Set higher to add hysteresis on the falling edge.
 
-    # Simulate: ball is stationary, camera 0 faces down.
-    # If camera 0 is along +X in body frame and the ball is oriented so that
-    # +X points downward, the accelerometer would read (−g, 0, 0) ≈ (−9.81,0,0)
-    # because gravity pulls along −X in body frame → accel reads +X.
-    # Wait — accel reads the reaction to gravity, so: accel = +g in the
-    # direction opposite to gravity.  If gravity is along −X_body, accel = (+g, 0, 0).
+    Attributes
+    ----------
+    cameras_facing_down : List[bool]
+        Filtered result for each camera (updated on every call to update()).
+    frame_counts : List[int]
+        Current consecutive-down frame count for each camera.
+    off_counts : List[int]
+        Current consecutive-not-down frame count for each camera (only
+        relevant when latch_off_frames > 1).
+    detector : CameraDownDetector
+        The underlying detector (accessible for raw readings and world
+        direction vectors).
 
-    stationary_accel = (G, 0.0, 0.0)   # gravity along −X_body → camera 0 faces down
-    detector.initialize_from_stationary(stationary_accel)
+    Example
+    -------
+    >>> detector = CameraDownDetector()
+    >>> detector.initialize_from_stationary(stationary_accel)
+    >>> filt = DownwardFrameFilter(detector, n_frames=5)
+    >>> while True:
+    ...     accel, gyro, dt = read_imu()
+    ...     stable = filt.update(accel, gyro, dt)
+    ...     if any(stable):
+    ...         print("Camera(s) stably facing down:", stable)
+    """
 
-    print("Initial state (stationary, camera 0 should face down):")
-    # Pass zero gyro and tiny dt for a stationary reading
-    result = detector.update(stationary_accel, (0.0, 0.0, 0.0), dt=0.01)
-    for i, facing_down in enumerate(result):
-        angle = np.degrees(np.arccos(
-            np.clip(np.dot(detector.camera_world_directions[i],
-                           [0, 0, -1]), -1, 1)
-        ))
-        print(f"  Camera {i}: facing_down={facing_down}  "
-              f"(angle to down = {angle:.1f}°)")
+    def __init__(
+        self,
+        detector: CameraDownDetector,
+        n_frames: int = SUSTAINED_FRAMES_REQUIRED,
+        latch_off_frames: int = 1,
+    ):
+        if n_frames < 1:
+            raise ValueError("n_frames must be >= 1.")
+        if latch_off_frames < 1:
+            raise ValueError("latch_off_frames must be >= 1.")
 
-    print("\nSimulating 90° roll (rotating around Z-axis at 1 rad/s for ~1.57s):")
-    dt = 0.01
-    steps = int(np.pi / 2 / (1.0 * dt))   # 90° at 1 rad/s
-    for _ in range(steps):
-        # During roll: accel still ~g but now with some centripetal component
-        # For simplicity keep it as pure gravity (slow roll approximation)
-        detector.update((G, 0.0, 0.0), (0.0, 0.0, 1.0), dt=dt)
+        self.detector = detector
+        self._n_frames = n_frames
+        self._latch_off = latch_off_frames
 
-    result = detector.update((G, 0.0, 0.0), (0.0, 0.0, 0.0), dt=dt)
-    print("After 90° roll:")
-    for i, facing_down in enumerate(result):
-        angle = np.degrees(np.arccos(
-            np.clip(np.dot(detector.camera_world_directions[i],
-                           [0, 0, -1]), -1, 1)
-        ))
-        print(f"  Camera {i}: facing_down={facing_down}  "
-              f"(angle to down = {angle:.1f}°)  "
-              f"world_dir={detector.camera_world_directions[i]}")
+        n_cameras = len(detector._cameras_body)
+
+        # Running counters — per camera
+        self.frame_counts: List[int] = [0] * n_cameras   # consecutive-down frames
+        self.off_counts:   List[int] = [0] * n_cameras   # consecutive-not-down frames
+
+        # Public filtered output
+        self.cameras_facing_down: List[bool] = [False] * n_cameras
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    @property
+    def n_frames(self) -> int:
+        """Number of consecutive down-frames required to confirm detection."""
+        return self._n_frames
+
+    @n_frames.setter
+    def n_frames(self, value: int) -> None:
+        if value < 1:
+            raise ValueError("n_frames must be >= 1.")
+        self._n_frames = value
+
+    @property
+    def latch_off_frames(self) -> int:
+        """Number of consecutive not-down frames required to clear detection."""
+        return self._latch_off
+
+    @latch_off_frames.setter
+    def latch_off_frames(self, value: int) -> None:
+        if value < 1:
+            raise ValueError("latch_off_frames must be >= 1.")
+        self._latch_off = value
+
+    def reset(self) -> None:
+        """Reset all counters and outputs to their initial state."""
+        n = len(self.frame_counts)
+        self.frame_counts      = [0] * n
+        self.off_counts        = [0] * n
+        self.cameras_facing_down = [False] * n
+
+    def update(
+        self,
+        accel: Tuple[float, float, float],
+        gyro:  Tuple[float, float, float],
+        dt:    float,
+    ) -> List[bool]:
+        """
+        Advance the detector by one IMU sample and apply the temporal filter.
+
+        Parameters
+        ----------
+        accel : (ax, ay, az) in m/s²
+        gyro  : (gx, gy, gz) in rad/s
+        dt    : float — seconds since last call
+
+        Returns
+        -------
+        List[bool]  — same object as self.cameras_facing_down
+            cameras_facing_down[i] is True only when camera i has been
+            continuously facing down for at least n_frames frames.
+        """
+        # Step the underlying detector first
+        raw = self.detector.update(accel, gyro, dt)
+
+        for i, is_down in enumerate(raw):
+            if is_down:
+                # Camera is down this frame: increment down-counter, reset off-counter
+                self.frame_counts[i] += 1
+                self.off_counts[i]    = 0
+
+                if self.frame_counts[i] >= self._n_frames:
+                    self.cameras_facing_down[i] = True
+            else:
+                # Camera is NOT down this frame: increment off-counter, reset down-counter
+                self.off_counts[i]   += 1
+                self.frame_counts[i]  = 0
+
+                if self.off_counts[i] >= self._latch_off:
+                    self.cameras_facing_down[i] = False
+
+        return self.cameras_facing_down

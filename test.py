@@ -1,4 +1,5 @@
 from camera_down_detector import CameraDownDetector
+from camera_down_detector import DownwardFrameFilter
 import board
 from adafruit_lsm6ds.ism330dhcx import ISM330DHCX
 from adafruit_lsm6ds import AccelRange, GyroRange, Rate
@@ -37,6 +38,7 @@ if __name__ == "__main__":
 
     
     detector.initialize_from_stationary(sensor.acceleration)  # call once while still
+    filt = DownwardFrameFilter(detector, n_frames=5)
     gyro_bias = detector.calibrate_gyro_bias(sensor)  # call once while still, after initialization
 
     picture_rate = 1.0  # pictures per second
@@ -44,7 +46,7 @@ if __name__ == "__main__":
     if args.pictures:
         camera = Picamera2()
         config = camera.create_still_configuration(
-                main={"size": (4608, 2592)},  # Camera Module 3 max resolution
+                main={"size": (2304, 1296)}, 
                 buffer_count=2
             )
         camera.configure(config)
@@ -68,7 +70,7 @@ if __name__ == "__main__":
             maxdps = 0
         dt = curInterval - prevInterval
         prevInterval = curInterval
-        result = detector.update(sensor.acceleration, corrected_gyro, dt)
+        result = filt.update(sensor.acceleration, corrected_gyro, dt)
         if args.pictures and (curInterval - last_picture_time) >= 1.0 / picture_rate:
             last_picture_time = curInterval
             timestamp = int(time.time())
